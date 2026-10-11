@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Placement Predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EDF0F5; --card:#FFFFFF; --ink:#13203F; --muted:#5C6784; --line:#D6DCE8;
+    --signal:#FFC83D; --ok:#17835A; --ok-bg:#DDF3E8; --bad:#C8402F; --bad-bg:#FBE3DE;
+    --display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+    --body:'Instrument Sans','Segoe UI',system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#0D1427; --card:#16203A; --ink:#EEF1F8; --muted:#9AA6C4; --line:#2A3658;
+      --ok:#4CD59A; --ok-bg:#12372B; --bad:#FF8573; --bad-bg:#3D1D1A; }
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{min-height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5;
+    padding:clamp(16px,4vw,48px)}
+  :focus-visible{outline:3px solid var(--signal);outline-offset:2px}
+  .shell{max-width:1120px;margin:0 auto}
+
+  header{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;margin-bottom:28px}
+  h1{font-family:var(--display);font-weight:800;font-size:clamp(2.2rem,6vw,4rem);line-height:.98;letter-spacing:-.03em;max-width:12ch}
+  header p{color:var(--muted);max-width:36ch}
+  .api{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--muted)}
+  .api input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);width:230px}
+
+  .grid{display:grid;grid-template-columns:1.35fr 1fr;gap:24px;align-items:start}
+  @media (max-width:900px){.grid{grid-template-columns:1fr}}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:clamp(18px,3vw,32px)}
+  fieldset{border:0;padding:0;margin:0 0 26px}
+  legend{font-family:var(--display);font-weight:800;font-size:1.15rem;margin-bottom:14px;padding:0}
+
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px}
+  @media (max-width:560px){.row{grid-template-columns:1fr}}
+
+  .field label,.field .lbl{display:flex;justify-content:space-between;font-size:.92rem;font-weight:500;margin-bottom:6px}
+  .field output{font-variant-numeric:tabular-nums;font-weight:600}
+  input[type=range]{width:100%;accent-color:var(--ink);height:28px;cursor:pointer}
+  .unit{color:var(--muted);font-weight:400}
+
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg input{position:absolute;opacity:0;pointer-events:none}
+  .seg label{display:inline-block;margin:0;padding:9px 16px;border:1.5px solid var(--line);border-radius:999px;cursor:pointer;
+    font-weight:500;background:transparent;transition:background .15s,border-color .15s,color .15s}
+  .seg input:checked + label{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .seg input:focus-visible + label{outline:3px solid var(--signal);outline-offset:2px}
+
+  button.go{width:100%;font:inherit;font-family:var(--display);font-weight:800;font-size:1.15rem;padding:16px;border:0;border-radius:14px;
+    background:var(--signal);color:#13203F;cursor:pointer;transition:transform .1s,filter .15s}
+  button.go:hover{filter:brightness(1.05)}
+  button.go:active{transform:scale(.99)}
+  button.go[disabled]{opacity:.6;cursor:progress}
+
+  /* result */
+  .result{position:sticky;top:24px;min-height:360px;display:flex;flex-direction:column;justify-content:center;gap:14px}
+  .idle{color:var(--muted)}
+  .idle strong{display:block;font-family:var(--display);font-size:1.5rem;color:var(--ink);margin-bottom:6px}
+  .verdict{border-radius:16px;padding:28px 24px;animation:stamp .45s cubic-bezier(.2,1.4,.4,1) both}
+  .verdict.ok{background:var(--ok-bg);color:var(--ok)}
+  .verdict.bad{background:var(--bad-bg);color:var(--bad)}
+  .verdict small{display:block;font-weight:500;opacity:.85;margin-bottom:6px}
+  .verdict b{display:block;font-family:var(--display);font-weight:800;font-size:clamp(2.4rem,5vw,3.4rem);line-height:1;letter-spacing:-.02em}
+  .verdict p{margin-top:12px;color:var(--ink);font-size:.95rem}
+  .err{background:var(--bad-bg);color:var(--ink);border-left:5px solid var(--bad);padding:16px;border-radius:10px;font-size:.92rem}
+  .err code{background:rgba(0,0,0,.08);padding:1px 5px;border-radius:4px}
+  @keyframes stamp{from{transform:scale(1.15) rotate(-2deg);opacity:0}to{transform:none;opacity:1}}
+  @media (prefers-reduced-motion:reduce){.verdict{animation:none}}
+  @media (max-width:900px){.result{position:static;min-height:0}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div>
+      <h1>Will this student get placed?</h1>
+    </div>
+    <p>Enter a student's habits and scores. The model replies with a placement prediction.</p>
+    <div class="api">
+      <label for="apiUrl">API address</label>
+      <input id="apiUrl" value="http://127.0.0.1:8000" spellcheck="false">
+    </div>
+  </header>
+
+  <form id="form" class="grid" autocomplete="off">
+    <div class="panel">
+      <fieldset>
+        <legend>Profile</legend>
+        <div class="row">
+          <div class="field">
+            <span class="lbl">Gender</span>
+            <div class="seg" role="radiogroup" aria-label="Gender">
+              <input type="radio" name="gender" id="g1" value="Male" checked><label for="g1">Male</label>
+              <input type="radio" name="gender" id="g2" value="Female"><label for="g2">Female</label>
+            </div>
+          </div>
+          <div class="field">
+            <span class="lbl">Extracurricular activities</span>
+            <div class="seg" role="radiogroup" aria-label="Extracurricular">
+              <input type="radio" name="extracurricular" id="e1" value="Yes" checked><label for="e1">Yes</label>
+              <input type="radio" name="extracurricular" id="e2" value="No"><label for="e2">No</label>
+            </div>
+          </div>
+        </div>
+        <div class="field" style="margin-top:18px">
+          <span class="lbl">Branch</span>
+          <div class="seg" role="radiogroup" aria-label="Branch" id="branches"></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Daily habits</legend>
+        <div class="row" id="habits"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Academics</legend>
+        <div class="row" id="academics"></div>
+      </fieldset>
+
+      <button class="go" id="submit" type="submit">Predict placement</button>
+    </div>
+
+    <aside class="panel result" id="result" aria-live="polite">
+      <div class="idle">
+        <strong>No prediction yet</strong>
+        Fill in the form and select Predict placement.
+      </div>
+    </aside>
+  </form>
+</div>
+
+<script>
+const sliders = {
+  habits: [
+    {id:'study_hours', label:'Study hours', unit:'h / day', min:0, max:12, step:.1, val:4},
+    {id:'sleep_hours', label:'Sleep hours', unit:'h / day', min:3, max:12, step:.1, val:7},
+    {id:'internet_usage', label:'Internet usage', unit:'h / day', min:0, max:12, step:.1, val:3},
+    {id:'attendance', label:'Attendance', unit:'%', min:0, max:100, step:.1, val:75},
+  ],
+  academics: [
+    {id:'assignments_completed', label:'Assignments completed', unit:'%', min:0, max:100, step:1, val:70},
+    {id:'previous_score', label:'Previous score', unit:'/ 100', min:0, max:100, step:.1, val:65},
+    {id:'exam_score', label:'Exam score', unit:'/ 100', min:0, max:100, step:.1, val:65},
+  ]
+};
+
+for (const [group, items] of Object.entries(sliders)) {
+  const host = document.getElementById(group);
+  items.forEach(s => {
+    host.insertAdjacentHTML('beforeend', `
+      <div class="field">
+        <label for="${s.id}">${s.label}<span><output id="${s.id}_o">${s.val}</output> <span class="unit">${s.unit}</span></span></label>
+        <input type="range" id="${s.id}" min="${s.min}" max="${s.max}" step="${s.step}" value="${s.val}">
+      </div>`);
+    const el = document.getElementById(s.id), out = document.getElementById(s.id + '_o');
+    el.addEventListener('input', () => out.textContent = el.value);
+  });
+}
+
+['CSE','IT','ECE','Mechanical','Civil','Commerce'].forEach((b, i) => {
+  document.getElementById('branches').insertAdjacentHTML('beforeend',
+    `<input type="radio" name="branch" id="b${i}" value="${b}" ${i===0?'checked':''}><label for="b${i}">${b}</label>`);
+});
+
+const form = document.getElementById('form'), result = document.getElementById('result'), btn = document.getElementById('submit');
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const v = id => document.getElementById(id).value;
+  const radio = n => form.querySelector(`input[name=${n}]:checked`).value;
+  const payload = {
+    gender: radio('gender'),
+    study_hours: +v('study_hours'),
+    attendance: +v('attendance'),
+    sleep_hours: +v('sleep_hours'),
+    internet_usage: +v('internet_usage'),
+    assignments_completed: +v('assignments_completed'),
+    previous_score: +v('previous_score'),
+    extracurricular: radio('extracurricular'),
+    exam_score: +v('exam_score'),
+    branch: radio('branch'),
+  };
+  const base = v('apiUrl').trim().replace(/\/+$/, '');
+  btn.disabled = true; btn.textContent = 'Predicting…';
+  try {
+    const res = await fetch(base + '/predict', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('The API returned status ' + res.status + '.');
+    const { prediction } = await res.json();
+    const placed = prediction === 'Placed';
+    result.innerHTML = `
+      <div class="verdict ${placed ? 'ok' : 'bad'}">
+        <small>Prediction</small>
+        <b>${placed ? 'Placed' : 'Not placed'}</b>
+        <p>${placed
+          ? 'This profile looks like students who were placed.'
+          : 'This profile looks like students who were not placed. Mock interviews and extra practice could help.'}</p>
+      </div>`;
+  } catch (err) {
+    result.innerHTML = `
+      <div class="err"><strong>Couldn't reach the API.</strong><br>
+        ${err.message}<br><br>
+        Check that the server is running (<code>uvicorn app:app --reload</code>), that the API address above is correct,
+        and that CORS is enabled in <code>app.py</code>.
+      </div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Predict placement';
+  }
+});
+</script>
+</body>
+</html>
